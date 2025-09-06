@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
@@ -23,7 +23,7 @@ import {
 
 const formSchema = z.object({
   title: z.string().min(1, "Title is required"),
-  content: z.string().min(1, "Content is required"),
+  content: z.string().optional(),
   timeDelay: z.string(),
 })
 
@@ -32,6 +32,10 @@ type FormData = z.infer<typeof formSchema>
 export default function Home() {
   const [selectedNumber, setSelectedNumber] = useState(1)
   const [selectedUnit, setSelectedUnit] = useState("weeks")
+  const [recentDelays, setRecentDelays] = useState<string[]>([])
+
+  const LAST_KEY = "recal:lastTimeDelay"
+  const RECENTS_KEY = "recal:recentTimeDelays"
   
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -52,6 +56,43 @@ export default function Home() {
   const updateTimeDelay = (number: number, unit: string) => {
     form.setValue("timeDelay", `${number}${unit}`)
   }
+
+  const parseTimeDelay = (td: string): { number: number; unit: string } => {
+    const m = td.match(/(\d+)(\w+)/)
+    const number = m ? parseInt(m[1]) : 1
+    const unit = m ? m[2] : "weeks"
+    return { number, unit }
+  }
+
+  // Load last selection and recents on mount
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const last = window.localStorage.getItem(LAST_KEY)
+    if (last) {
+      const { number, unit } = parseTimeDelay(last)
+      setSelectedNumber(number)
+      setSelectedUnit(unit)
+      updateTimeDelay(number, unit)
+    } else {
+      updateTimeDelay(selectedNumber, selectedUnit)
+    }
+
+    const savedRecents = window.localStorage.getItem(RECENTS_KEY)
+    if (savedRecents) {
+      try {
+        const arr = JSON.parse(savedRecents)
+        if (Array.isArray(arr)) setRecentDelays(arr.slice(0, 3))
+      } catch {}
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Update last selection whenever wheels or quick picks change
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const td = `${selectedNumber}${selectedUnit}`
+    window.localStorage.setItem(LAST_KEY, td)
+  }, [selectedNumber, selectedUnit])
 
   // Preview date for the current selection
   const selectedUnitObj = units.find((u) => u.value === selectedUnit)
@@ -114,6 +155,16 @@ export default function Home() {
     URL.revokeObjectURL(url)
     
     toast.success("Calendar reminder created!")
+
+    // Update recents with the latest distinct choice (keep last 3)
+    const chosen = data.timeDelay
+    setRecentDelays((prev) => {
+      const next = [chosen, ...prev.filter((v) => v !== chosen)].slice(0, 3)
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(RECENTS_KEY, JSON.stringify(next))
+      }
+      return next
+    })
   }
 
   const scrollToGenerator = () => {
@@ -249,6 +300,34 @@ export default function Home() {
                               {selectedNumber} {selectedUnit} later
                             </span>
                           </div>
+
+                          {/* Recent quick picks */}
+                          {recentDelays.length > 0 && (
+                            <div className="mt-2">
+                              <p className="text-xs text-gray-500 mb-2">Recent picks</p>
+                              <div className="flex flex-wrap gap-2">
+                                {recentDelays.map((td) => {
+                                  const { number, unit } = parseTimeDelay(td)
+                                  const label = `${number} ${unit}`
+                                  return (
+                                    <Button
+                                      key={td}
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => {
+                                        setSelectedNumber(number)
+                                        setSelectedUnit(unit)
+                                        updateTimeDelay(number, unit)
+                                      }}
+                                    >
+                                      {label}
+                                    </Button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
