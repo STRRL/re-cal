@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { toast, Toaster } from "sonner"
-import { Download, Calendar, Copy, Mail, Apple } from "lucide-react"
+import { Calendar, Copy, Mail, Apple } from "lucide-react"
 import { format, addWeeks, addMonths, addYears } from "date-fns"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
@@ -136,7 +136,7 @@ export default function Home() {
       `DTSTART:${formatDate(startDate)}`,
       `DTEND:${formatDate(endDate)}`,
       `SUMMARY:${data.title}`,
-      `DESCRIPTION:${data.content.replace(/\n/g, "\\n")}`,
+      `DESCRIPTION:${(data.content || "").replace(/\n/g, "\\n")}`,
       "END:VEVENT",
       "END:VCALENDAR"
     ]

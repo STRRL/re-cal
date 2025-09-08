@@ -37,12 +37,14 @@ export function WheelPicker({
   }, [selectedIndex, itemHeight])
 
   // Snap on scroll end and notify change
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+  
   const handleScroll = useCallback(() => {
     const el = containerRef.current
     if (!el) return
     // Debounce - run after small delay
-    if ((handleScroll as any)._t) clearTimeout((handleScroll as any)._t)
-    ;(handleScroll as any)._t = setTimeout(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    timeoutRef.current = setTimeout(() => {
       const index = Math.round(el.scrollTop / itemHeight)
       const clamped = Math.max(0, Math.min(options.length - 1, index))
       const targetTop = clamped * itemHeight
@@ -85,7 +87,7 @@ export function WheelPicker({
                 "flex items-center justify-center text-base",
                 idx === selectedIndex ? "text-gray-900" : "text-gray-400"
               )}
-              style={{ height: itemHeight, scrollSnapAlign: "center", scrollSnapStop: "always" as any }}
+              style={{ height: itemHeight, scrollSnapAlign: "center", scrollSnapStop: "always" } as React.CSSProperties}
             >
               {opt.label}
             </li>
