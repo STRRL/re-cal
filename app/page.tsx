@@ -6,12 +6,11 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { toast, Toaster } from "sonner"
-import { Download } from "lucide-react"
-import { format, addDays, addWeeks, addMonths, addYears } from "date-fns"
+import { Download, Calendar, Copy, Mail, Apple } from "lucide-react"
+import { format, addWeeks, addMonths, addYears } from "date-fns"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import * as z from "zod"
-import { cn } from "@/lib/utils"
 import WheelPicker from "@/components/ui/wheel-picker"
 import {
   Form,
@@ -94,15 +93,8 @@ export default function Home() {
     window.localStorage.setItem(LAST_KEY, td)
   }, [selectedNumber, selectedUnit])
 
-  // Preview date for the current selection
-  const selectedUnitObj = units.find((u) => u.value === selectedUnit)
-  const previewDate = selectedUnitObj ? selectedUnitObj.fn(selectedNumber) : addWeeks(new Date(), selectedNumber)
 
-  const generateICS = (data: FormData) => {
-    const now = new Date()
-    const uid = `${Date.now()}@recal.app`
-    const dtstamp = now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "")
-    
+  const getEventDates = (data: FormData) => {
     // Parse the time delay (e.g., "3weeks", "2months")
     const match = data.timeDelay.match(/(\d+)(\w+)/)
     const number = match ? parseInt(match[1]) : 1
@@ -111,6 +103,16 @@ export default function Home() {
     const selectedUnit = units.find(u => u.value === unit)
     const startDate = selectedUnit ? selectedUnit.fn(number) : addWeeks(new Date(), 1)
     const endDate = new Date(startDate.getTime() + 30 * 60000) // 30 minutes duration
+    
+    return { startDate, endDate }
+  }
+
+  const generateICS = (data: FormData) => {
+    const now = new Date()
+    const uid = `${Date.now()}@recal.app`
+    const dtstamp = now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "")
+    
+    const { startDate, endDate } = getEventDates(data)
     
     const formatDate = (date: Date) => {
       const year = date.getFullYear()
@@ -122,7 +124,7 @@ export default function Home() {
       return `${year}${month}${day}T${hours}${minutes}${seconds}`
     }
     
-    let icsContent = [
+    const icsContent = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
       "PRODID:-//ReCal//ReCal 1.0//EN",
@@ -142,7 +144,7 @@ export default function Home() {
     return icsContent.join("\r\n")
   }
 
-  const onSubmit = (data: FormData) => {
+  const downloadICS = (data: FormData) => {
     const icsContent = generateICS(data)
     const blob = new Blob([icsContent], { type: "text/calendar;charset=utf-8" })
     const url = URL.createObjectURL(blob)
@@ -154,17 +156,92 @@ export default function Home() {
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
     
-    toast.success("Calendar reminder created!")
+    toast.success("Calendar file downloaded! Works with Apple Calendar, Outlook desktop, and other calendar apps.")
+    updateRecents(data.timeDelay)
+  }
 
+  const addToGoogleCalendar = (data: FormData) => {
+    const { startDate, endDate } = getEventDates(data)
+    
+    // Format dates for Google Calendar (YYYYMMDDTHHmmssZ)
+    const formatGoogleDate = (date: Date) => {
+      return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "")
+    }
+    
+    const params = new URLSearchParams({
+      action: "TEMPLATE",
+      text: data.title,
+      dates: `${formatGoogleDate(startDate)}/${formatGoogleDate(endDate)}`,
+      details: data.content || "",
+      trp: "false"
+    })
+    
+    const url = `https://calendar.google.com/calendar/render?${params.toString()}`
+    window.open(url, "_blank")
+    toast.success("Opening Google Calendar...")
+    updateRecents(data.timeDelay)
+  }
+
+  const addToOutlook = (data: FormData) => {
+    const { startDate, endDate } = getEventDates(data)
+    
+    // Format dates for Outlook (YYYY-MM-DDTHH:MM:SS)
+    const formatOutlookDate = (date: Date) => {
+      return date.toISOString().slice(0, 19)
+    }
+    
+    const params = new URLSearchParams({
+      path: "/calendar/action/compose",
+      rru: "addevent",
+      startdt: formatOutlookDate(startDate),
+      enddt: formatOutlookDate(endDate),
+      subject: data.title,
+      body: data.content || "",
+    })
+    
+    // Try both Outlook Live and Office 365 URLs
+    const urls = [
+      `https://outlook.live.com/calendar/deeplink/compose?${params.toString()}`,
+      `https://outlook.office.com/calendar/deeplink/compose?${params.toString()}`
+    ]
+    
+    // Open Outlook Live by default, but provide option for Office 365
+    window.open(urls[0], "_blank")
+    toast.success("Opening Outlook Calendar...")
+    updateRecents(data.timeDelay)
+  }
+
+
+  const copyEventDetails = (data: FormData) => {
+    const { startDate } = getEventDates(data)
+    
+    const eventText = `📅 ${data.title}
+🗓️ ${format(startDate, "PPP 'at' p")}
+⏱️ Duration: 30 minutes
+${data.content ? `\n📝 ${data.content}` : ""}`
+    
+    navigator.clipboard.writeText(eventText).then(() => {
+      toast.success("Event details copied to clipboard!")
+    }).catch(() => {
+      toast.error("Failed to copy to clipboard")
+    })
+    updateRecents(data.timeDelay)
+  }
+
+  const updateRecents = (timeDelay: string) => {
     // Update recents with the latest distinct choice (keep last 3)
-    const chosen = data.timeDelay
     setRecentDelays((prev) => {
-      const next = [chosen, ...prev.filter((v) => v !== chosen)].slice(0, 3)
+      const next = [timeDelay, ...prev.filter((v) => v !== timeDelay)].slice(0, 3)
       if (typeof window !== "undefined") {
         window.localStorage.setItem(RECENTS_KEY, JSON.stringify(next))
       }
       return next
     })
+  }
+
+  const onSubmit = (data: FormData) => {
+    // Default action - download ICS
+    downloadICS(data)
   }
 
   const scrollToGenerator = () => {
@@ -333,15 +410,65 @@ export default function Home() {
                     </div>
 
 
-                    {/* Submit Button */}
-                    <Button 
-                      type="submit" 
-                      className="w-full bg-black text-white hover:bg-gray-800"
-                      size="default"
-                    >
-                      <Download className="mr-2 h-5 w-5" />
-                      Create Reminder
-                    </Button>
+                    {/* Calendar Integration Options */}
+                    <div className="space-y-3">
+                      <p className="text-sm font-medium text-gray-700">Add to calendar:</p>
+                      
+                      <div className="space-y-2">
+                        {/* Online calendars */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => form.handleSubmit(addToGoogleCalendar)()}
+                            className="justify-start"
+                          >
+                            <Calendar className="mr-2 h-4 w-4 text-blue-600" />
+                            Google Calendar
+                          </Button>
+                          
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => form.handleSubmit(addToOutlook)()}
+                            className="justify-start"
+                          >
+                            <Mail className="mr-2 h-4 w-4 text-blue-500" />
+                            Outlook Web
+                          </Button>
+                        </div>
+                        
+                        {/* Universal options */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            type="submit"
+                            variant="outline"
+                            size="sm"
+                            className="justify-start"
+                          >
+                            <Apple className="mr-2 h-4 w-4" />
+                            iCal / .ics file
+                          </Button>
+                          
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => form.handleSubmit(copyEventDetails)()}
+                            className="justify-start"
+                          >
+                            <Copy className="mr-2 h-4 w-4" />
+                            Copy Details
+                          </Button>
+                        </div>
+                      </div>
+                      
+                      <p className="text-xs text-gray-500">
+                        .ics file works with Apple Calendar, Outlook desktop, and most calendar apps
+                      </p>
+                    </div>
                     </form>
                   </Form>
                 </CardContent>
